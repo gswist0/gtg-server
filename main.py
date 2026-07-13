@@ -74,6 +74,7 @@ def play():
                 game.bonus_points += 1
             game.round_completed = True
             response = get_game_state_response(game.id)
+            response.is_correct = True
             response.response_text = f"Correct , the game was {game.current_game}"
             return flask.jsonify(response.__dict__), 200
         else:
