@@ -9,6 +9,7 @@ class Game:
     lives: int #non-infinite only
     bonus_points: int #non-infinite only
     current_game: str
+    game_ended: bool
 
     #bonus points - should reset after round end or correct guess
     shield_left: int

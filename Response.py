@@ -11,3 +11,4 @@ class Response:
     lives_left: int = None
     shield_left: int = None
     is_infinite: bool = None
+    game_ended: bool = None

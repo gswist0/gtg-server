@@ -67,6 +67,11 @@ def play():
     if game and game.round_completed and request.action != 'next':
         return flask.jsonify({'error': 'Round completed, please go to next round'}), 400
     
+    if game and game.game_ended:
+        response = get_game_state_response(game.id)
+        response.response_text = "Game has ended. Please start a new game."
+        return flask.jsonify(response.__dict__), 200
+    
     if request.action == 'guess':
         correct = request.guessed_game.lower() == game.current_game.lower()
         if correct:
@@ -106,6 +111,8 @@ def play():
         response.response_text = response_text
         return flask.jsonify(response.__dict__), 200
     elif request.action == 'ability':
+        if game.bonus_points < 1:
+            return flask.jsonify({'error': 'Not enough bonus points'}), 400
         if request.ability_used == 'shield':
             game.shield_left = 3
             game.bonus_points -= 1
@@ -196,7 +203,8 @@ def start_game(is_infinite = False):
         all_unlocked=False,
         current_song=0,
         song_order=random_game[1],
-        round_completed=False
+        round_completed=False,
+        game_ended=False
     )
     active_games.append(new_game)
     return new_game
