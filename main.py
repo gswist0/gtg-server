@@ -27,7 +27,8 @@ def get_game_state_response(game_id):
         shield_left=game.shield_left,
         lives_left=game.lives,
         current_song=game.current_song,
-        is_infinite=game.is_infinite
+        is_infinite=game.is_infinite,
+        game_ended=game.game_ended
     )
     return response
 
