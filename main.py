@@ -105,7 +105,7 @@ def play():
             return flask.jsonify({'error': 'Round not completed'}), 400
         next_round = go_to_next_round(game)
         if next_round is None:
-            response_text = "Congratulations! You won"
+            response_text = f"Congratulations! You won, the game was {game.current_game}"
         else:
             response_text = "Next round"
         response = get_game_state_response(game.id)
@@ -140,7 +140,7 @@ def play():
     elif request.action == 'skip':
         game.lives -= 1
         if game.lives <= 0:
-            return flask.jsonify({'response_text': f"Game over on round {game.round_number}."}), 200
+            return flask.jsonify({'response_text': f"Game over on round {game.round_number}, game was {game.current_game}."}), 200
         response_text = ""
         if game.current_song == len(game.song_order) - 1: #new round
             game.round_completed = True
