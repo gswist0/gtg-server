@@ -6,9 +6,15 @@ class Response:
     response_text: str = ""
     is_correct: bool = None
     current_bonus_points: int = None
+    current_points: int = None
     current_round: int = None
-    current_song: int = None
+    current_song: int = None #highest unlocked song index
+    total_songs: int = None
     lives_left: int = None
+    max_lives: int = None
     shield_left: int = None
+    all_unlocked: bool = None
+    round_completed: bool = None
     is_infinite: bool = None
     game_ended: bool = None
+    correct_answer: str = None #only revealed once the round is over

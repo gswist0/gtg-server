@@ -8,6 +8,7 @@ class Game:
     is_infinite: bool
     lives: int #non-infinite only
     bonus_points: int #non-infinite only
+    points: int #correct guesses so far
     current_game: str
     game_ended: bool
 
