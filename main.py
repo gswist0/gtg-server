@@ -1,6 +1,7 @@
 import dataclasses
 import os
 import shutil
+import threading
 import uuid
 from random import choice, randint, shuffle
 
@@ -24,6 +25,7 @@ CLIP_LENGTH_MS = 20000
 SHIELD_CHARGES = 3
 MAX_ACTIVE_GAMES = 50
 AUDIO_CACHE_SECONDS = 3600
+STAGING_SUBDIR = 'next' #temp/<game_id>/next/, where the round after this one is cut
 
 app = flask.Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', uuid.uuid4().hex)
@@ -31,6 +33,13 @@ app.secret_key = os.environ.get('FLASK_SECRET_KEY', uuid.uuid4().hex)
 ALLOWED_ORIGIN = os.environ.get('CORS_ALLOWED_ORIGIN', '*')
 
 active_games = []
+
+#cutting a round costs seconds of ffmpeg, so it runs while the player is still
+#guessing the current one. game_id -> {'done': Event, 'round': (name, songs) | None}
+staged_rounds = {}
+staging_lock = threading.Lock()
+
+LIBRARY_EXHAUSTED = object() #staging looked and there is no unplayed game left
 
 
 class NoGamesAvailable(Exception):
@@ -279,19 +288,82 @@ def advance_song(game):
         game.current_song += 1
 
 
+def stage_next_round(game_id, past_games, entry):
+    #runs off-request: picks the round after the current one and cuts its clips
+    try:
+        chosen = get_random_game(past_games)
+        if chosen is None:
+            entry['round'] = LIBRARY_EXHAUSTED
+        elif chosen[1]:
+            prepare_audio_for_round(
+                game_id, chosen[0], chosen[1], subdir=STAGING_SUBDIR)
+            entry['round'] = chosen
+    except Exception: #a failed cut just means go_to_next_round does it itself
+        app.logger.exception('Could not stage the next round for %s', game_id)
+        entry['round'] = None
+    finally:
+        entry['done'].set()
+
+
+def start_staging(game):
+    if game.game_ended:
+        return
+    with staging_lock:
+        if game.id in staged_rounds:
+            return
+        entry = {'done': threading.Event(), 'round': None}
+        staged_rounds[game.id] = entry
+    #the game the player is on is not in previous_games yet, so exclude it here
+    past_games = game.previous_games + [game.current_game]
+    threading.Thread(
+        target=stage_next_round,
+        args=(game.id, past_games, entry),
+        daemon=True,
+    ).start()
+
+
+def take_staged_round(game):
+    with staging_lock:
+        entry = staged_rounds.pop(game.id, None)
+    if entry is None:
+        return None
+    #worst case this waits exactly as long as cutting inline would have
+    entry['done'].wait()
+    return entry['round']
+
+
+def promote_staged_clips(game_id, song_count):
+    staging = os.path.join(TEMP_DIR, game_id, STAGING_SUBDIR)
+    for i in range(song_count):
+        os.replace(
+            os.path.join(staging, f"{i}.mp3"),
+            os.path.join(TEMP_DIR, game_id, f"{i}.mp3"),
+        )
+    shutil.rmtree(staging, ignore_errors=True)
+
+
 def go_to_next_round(game):
     game.round_number += 1
     game.previous_games.append(game.current_game)
     game.shield_left = 0
     game.all_unlocked = False
-    new_random_game = get_random_game(game.previous_games)
-    if new_random_game is None:
+
+    staged = take_staged_round(game)
+    if staged is LIBRARY_EXHAUSTED:
         return None #player played all games
+    if staged is None: #nothing usable was prepared, fall back to cutting inline
+        staged = get_random_game(game.previous_games)
+        if staged is None:
+            return None #player played all games
+        prepare_audio_for_round(game.id, staged[0], staged[1])
+    else:
+        promote_staged_clips(game.id, len(staged[1]))
+
     game.current_song = 0
-    game.current_game = new_random_game[0]
-    game.song_order = new_random_game[1]
+    game.current_game = staged[0]
+    game.song_order = staged[1]
     game.round_completed = False
-    prepare_audio_for_round(game.id, game.current_game, game.song_order)
+    start_staging(game)
     return game
 
 
@@ -334,12 +406,13 @@ def start_game(is_infinite=False):
         game_ended=False
     )
     active_games.append(new_game)
+    start_staging(new_game)
     return new_game
 
 
-def prepare_audio_for_round(game_id, game_name, song_order): #puts three 20-second song clips into temp/game_id/0.mp3, temp/game_id/1.mp3, temp/game_id/2.mp3
+def prepare_audio_for_round(game_id, game_name, song_order, subdir=''): #puts three 20-second song clips into temp/game_id/0.mp3, temp/game_id/1.mp3, temp/game_id/2.mp3
     src_folder = os.path.join(ASSETS_DIR, game_name)
-    dest_folder = os.path.join(TEMP_DIR, game_id)
+    dest_folder = os.path.join(TEMP_DIR, game_id, subdir)
     os.makedirs(dest_folder, exist_ok=True)
     for i, song in enumerate(song_order):
         src_path = os.path.join(src_folder, song)
@@ -357,6 +430,9 @@ def cleanup_temp_files():
     while len(active_games) >= MAX_ACTIVE_GAMES:
         stale = next((g for g in active_games if g.game_ended), active_games[0])
         active_games.remove(stale)
+        with staging_lock:
+            staged_rounds.pop(stale.id, None)
+        #a staging thread may still be writing in there, hence ignore_errors
         shutil.rmtree(os.path.join(TEMP_DIR, stale.id), ignore_errors=True)
 
 
