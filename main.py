@@ -4,6 +4,7 @@ import os
 import shutil
 import threading
 import uuid
+import logging
 from random import choice, randint, shuffle
 import json
 
@@ -15,6 +16,19 @@ from werkzeug.exceptions import HTTPException
 from Game import Game
 from Request import Request
 from Response import Response
+
+file_path = f"logs/output_{datetime.date.today()}.log"
+
+if not os.path.exists(file_path):
+    open(file_path, "x").close()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(file_path)
+    ]
+)
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -128,6 +142,7 @@ def game_state(game_id):
 
 @app.route('/get_audio/<game_id>/<song_number>', methods=['GET'])
 def get_audio(game_id, song_number):
+    logging.info(f"Game {game_id} requested audio for song {song_number}")
     game = find_game(game_id)
     if game is None:
         return json_error('Game not found', 404)
@@ -193,6 +208,7 @@ def play():
 
 
 def handle_guess(game, request):
+    logging.info(f"Game {game.id} guessed {request.guessed_game}")
     guess = (request.guessed_game or '').strip()
     if not guess:
         return json_error('No guess provided', 400)
@@ -228,6 +244,7 @@ def handle_guess(game, request):
 
 
 def handle_next(game):
+    logging.info(f"Game {game.id} went to next round")
     if not game.round_completed:
         return json_error('Round not completed', 400)
     if go_to_next_round(game) is None: #player exhausted every game in the library
@@ -239,6 +256,7 @@ def handle_next(game):
 
 
 def handle_ability(game, request):
+    logging.info(f"Game {game.id} used ability {request.ability_used}")
     if game.is_infinite:
         return json_error('Abilities are not available in endless mode', 400)
     if game.bonus_points < 1:
@@ -274,6 +292,7 @@ def handle_ability(game, request):
 
 
 def handle_skip(game):
+    logging.info(f"Game {game.id} used skip")
     if not game.is_infinite:
         game.lives -= 1
         if game.lives <= 0:
@@ -377,6 +396,7 @@ def go_to_next_round(game):
     game.current_game = staged[0]
     game.song_order = staged[1]
     game.round_completed = False
+    logging.info(f"Game {game.id} advanced to round {game.round_number}, next game is {game.current_game}")
     start_staging(game)
     return game
 
@@ -422,6 +442,7 @@ def start_game(is_infinite=False):
     )
     active_games.append(new_game)
     start_staging(new_game)
+    logging.info(f"Started new game {new_game.id}, infinite = {new_game.is_infinite}, first game is {new_game.current_game}")
     return new_game
 
 
