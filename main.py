@@ -1,9 +1,12 @@
 import dataclasses
+import datetime
 import os
 import shutil
 import threading
 import uuid
 from random import choice, randint, shuffle
+import json
+
 
 import flask
 import pydub
@@ -169,6 +172,8 @@ def play():
     if game is None:
         return json_error('Game not found', 404)
 
+    game.last_interaction_date = int(datetime.datetime.now().timestamp())
+
     if game.game_ended:
         return json_state(game, "Game has ended. Please start a new game.")
 
@@ -197,10 +202,12 @@ def handle_guess(game, request):
             game.bonus_points += 1
         game.points += 1
         game.round_completed = True
+        save_active_games()
         return json_state(game, f"Correct, the game was {game.current_game}", is_correct=True)
 
     if game.shield_left > 0:
         game.shield_left -= 1
+        save_active_games()
         return json_state(game, "Shield blocked the wrong guess", is_correct=False)
 
     if not game.is_infinite:
@@ -208,6 +215,7 @@ def handle_guess(game, request):
         if game.lives <= 0:
             game.lives = 0
             game.game_ended = True
+            save_active_games()
             return json_state(
                 game,
                 f"Game over on round {game.round_number}, the game was {game.current_game}",
@@ -215,6 +223,7 @@ def handle_guess(game, request):
             )
 
     advance_song(game)
+    save_active_games()  # Save the game state after a wrong guess
     return json_state(game, "Incorrect", is_correct=False)
 
 
@@ -223,7 +232,9 @@ def handle_next(game):
         return json_error('Round not completed', 400)
     if go_to_next_round(game) is None: #player exhausted every game in the library
         game.game_ended = True
+        save_active_games()
         return json_state(game, "Congratulations! You have played through every available game.")
+    save_active_games()  # Save the game state after advancing to the next round
     return json_state(game, "Next round")
 
 
@@ -258,6 +269,7 @@ def handle_ability(game, request):
         return json_error('Invalid ability', 400)
 
     game.bonus_points -= 1
+    save_active_games()  # Save the game state after using an ability
     return json_state(game, response_text)
 
 
@@ -267,6 +279,7 @@ def handle_skip(game):
         if game.lives <= 0:
             game.lives = 0
             game.game_ended = True
+            save_active_games()
             return json_state(
                 game,
                 f"Game over on round {game.round_number}, the game was {game.current_game}",
@@ -278,6 +291,7 @@ def handle_skip(game):
     else:
         game.current_song += 1
         response_text = "Skipped to next song"
+    save_active_games()  # Save the game state after skipping a song
     return json_state(game, response_text)
 
 
@@ -403,7 +417,8 @@ def start_game(is_infinite=False):
         current_song=0,
         song_order=random_game[1],
         round_completed=False,
-        game_ended=False
+        game_ended=False,
+        last_interaction_date=int(datetime.datetime.now().timestamp())
     )
     active_games.append(new_game)
     start_staging(new_game)
@@ -435,8 +450,29 @@ def cleanup_temp_files():
         #a staging thread may still be writing in there, hence ignore_errors
         shutil.rmtree(os.path.join(TEMP_DIR, stale.id), ignore_errors=True)
 
+def save_active_games():
+    #save active games to a file for persistence
+    with open(os.path.join(BASE_DIR, 'active_games.json'), 'w') as f:
+        json.dump([dataclasses.asdict(g) for g in active_games], f)
+
+def load_active_games():
+    #load active games from a file
+    try:
+        with open(os.path.join(BASE_DIR, 'active_games.json'), 'r') as f:
+            games_data = json.load(f)
+            for game_data in games_data:
+                game = Game(**game_data)
+                if game.game_ended == True or datetime.datetime.fromtimestamp(game.last_interaction_date) < datetime.datetime.now() - datetime.timedelta(days=3):  # Skip games that started more than 3 days ago
+                    continue  # Skip loading ended games
+                active_games.append(game)
+                start_staging(game)
+            if len(active_games) == 0:
+                print("No active games loaded. Starting fresh.")
+    except FileNotFoundError:
+        print("No saved active games found. Starting fresh.")
 
 if __name__ == '__main__':
     if not list_available_games():
         print(f"WARNING: no games found in {ASSETS_DIR} - /play will return 503 until you add some.")
+    load_active_games()
     app.run('0.0.0.0', port=2137, debug=True)

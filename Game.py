@@ -20,3 +20,6 @@ class Game:
     current_song: int
     song_order: list
     round_completed: bool
+
+    #for cleanup purposes
+    last_interaction_date: int

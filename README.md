@@ -52,8 +52,8 @@ matter. Two environment variables are read:
 | `FLASK_SECRET_KEY`     | random per boot    | Flask session key                     |
 | `CORS_ALLOWED_ORIGIN`  | `*`                | Origin allowed to call the API        |
 
-Game state lives in memory, so restarting the server drops every game in
-progress (the frontend falls back to the mode picker).
+Game state lives in memory and is saved to a json file every time any game state changes.
+Games are loaded from this file on boot, if they have been interacted with in the last 3 days, and are in progress. The rest are skipped and forgotten.
 
 ## API
 

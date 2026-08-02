@@ -1,3 +1,4 @@
 ﻿/assets/games/*
 /temp
 __pycache__/
+active_games.json
