@@ -126,7 +126,17 @@ def list_available_games():
         if os.path.isdir(os.path.join(ASSETS_DIR, entry))
     )
 
+class NoHealthcheckFilter(logging.Filter):
+    def filter(self, record):
+        return '/healthcheck' not in record.getMessage()
 
+logging.getLogger('werkzeug').addFilter(NoHealthcheckFilter())
+
+
+@app.route('/healthcheck', methods=['GET'])
+def healthcheck():
+    return flask.jsonify({'status': 'ok'}), 200
+    
 @app.route('/autofill', methods=['GET'])
 def autofill():
     return flask.jsonify({'games': list_available_games()}), 200
