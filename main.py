@@ -65,7 +65,8 @@ class NoGamesAvailable(Exception):
 def check_franchise(guessed_game, current_game):
     with open(os.path.join(ASSETS_DIR,"games.json"), "r") as f:
         games_data = json.load(f)
-        return any(guessed_game in values and current_game in values for values in games_data.values())
+        games_data = {key: [v.lower() for v in values] for key, values in games_data.items()}
+        return any(guessed_game.lower() in value and current_game.lower() in value for value in games_data.values())
 
 
 @app.after_request
