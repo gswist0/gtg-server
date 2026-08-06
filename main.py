@@ -62,6 +62,11 @@ LIBRARY_EXHAUSTED = object() #staging looked and there is no unplayed game left
 class NoGamesAvailable(Exception):
     pass
 
+def check_franchise(guessed_game, current_game):
+    with open(os.path.join(ASSETS_DIR,"games.json"), "r") as f:
+        games_data = json.load(f)
+        return any(guessed_game in values and current_game in values for values in games_data.values())
+
 
 @app.after_request
 def add_cors_headers(response):
@@ -107,6 +112,7 @@ def build_response(game, response_text="", is_correct=None):
         is_infinite=game.is_infinite,
         game_ended=game.game_ended,
         correct_answer=game.current_game if reveal_answer else None,
+        correct_franchise=game.correct_franchise
     )
 
 
@@ -198,6 +204,7 @@ def play():
         return json_error('Game not found', 404)
 
     game.last_interaction_date = int(datetime.datetime.now().timestamp())
+    game.correct_franchise = None
 
     if game.game_ended:
         return json_state(game, "Game has ended. Please start a new game.")
@@ -230,6 +237,8 @@ def handle_guess(game, request):
         game.round_completed = True
         save_active_games()
         return json_state(game, f"Correct, the game was {game.current_game}", is_correct=True)
+
+    game.correct_franchise = check_franchise(guess, game.current_game)
 
     if game.shield_left > 0:
         game.shield_left -= 1
@@ -448,7 +457,8 @@ def start_game(is_infinite=False):
         song_order=random_game[1],
         round_completed=False,
         game_ended=False,
-        last_interaction_date=int(datetime.datetime.now().timestamp())
+        last_interaction_date=int(datetime.datetime.now().timestamp()),
+        correct_franchise=None
     )
     active_games.append(new_game)
     start_staging(new_game)
@@ -499,7 +509,7 @@ def load_active_games():
                 start_staging(game)
             if len(active_games) == 0:
                 print("No active games loaded. Starting fresh.")
-    except FileNotFoundError:
+    except Exception:
         print("No saved active games found. Starting fresh.")
 
 if __name__ == '__main__':

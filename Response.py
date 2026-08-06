@@ -18,3 +18,4 @@ class Response:
     is_infinite: bool = None
     game_ended: bool = None
     correct_answer: str = None #only revealed once the round is over
+    correct_franchise: bool = None 

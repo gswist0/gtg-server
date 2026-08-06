@@ -20,6 +20,7 @@ class Game:
     current_song: int
     song_order: list
     round_completed: bool
+    correct_franchise: bool
 
     #for cleanup purposes
     last_interaction_date: int
