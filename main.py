@@ -43,6 +43,10 @@ SHIELD_CHARGES = 3
 MAX_ACTIVE_GAMES = 50
 AUDIO_CACHE_SECONDS = 3600
 STAGING_SUBDIR = 'next' #temp/<game_id>/next/, where the round after this one is cut
+EXTRA_LIFE_COST = 1
+SHIELD_COST = 1
+SKIP_COST = 2
+UNLOCK_COST = 1
 
 app = flask.Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', uuid.uuid4().hex)
@@ -279,34 +283,45 @@ def handle_ability(game, request):
     logging.info(f"Game {game.id} used ability {request.ability_used}")
     if game.is_infinite:
         return json_error('Abilities are not available in endless mode', 400)
-    if game.bonus_points < 1:
-        return json_error('Not enough bonus points', 400)
+    
 
     ability = request.ability_used
     if ability == 'shield':
+        if game.bonus_points < SHIELD_COST:
+                return json_error('Not enough bonus points', 400)
         if game.shield_left > 0:
             return json_error('Shield is already active', 400)
         game.shield_left = SHIELD_CHARGES
+        game.bonus_points -= SHIELD_COST
         response_text = "Shield activated"
     elif ability == 'unlock':
+        if game.bonus_points < UNLOCK_COST:
+                return json_error('Not enough bonus points', 400)
         if game.all_unlocked:
             return json_error('Songs are already unlocked', 400)
         game.all_unlocked = True
         game.current_song = len(game.song_order) - 1
+        game.bonus_points -= UNLOCK_COST
         response_text = "All songs unlocked"
     elif ability == 'skip_round':
+        if game.bonus_points < SKIP_COST:
+                return json_error('Not enough bonus points', 400)
         game.round_completed = True
         game.current_song = len(game.song_order) - 1
+        game.bonus_points -= SKIP_COST
         response_text = f"Round skipped, the game was {game.current_game}"
     elif ability == 'extra_life':
+        if game.bonus_points < EXTRA_LIFE_COST:
+                return json_error('Not enough bonus points', 400)
         if game.lives >= MAX_LIVES:
             return json_error('Lives are already full', 400)
         game.lives += 1
+        game.bonus_points -= EXTRA_LIFE_COST
         response_text = "Extra life granted"
     else:
         return json_error('Invalid ability', 400)
 
-    game.bonus_points -= 1
+    
     save_active_games()  # Save the game state after using an ability
     return json_state(game, response_text)
 
