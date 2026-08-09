@@ -116,7 +116,8 @@ def build_response(game, response_text="", is_correct=None):
         game_ended=game.game_ended,
         correct_answer=game.current_game if reveal_answer else None,
         correct_franchise=game.correct_franchise,
-        ability_cooldowns=game.ability_cooldowns
+        ability_cooldowns=game.ability_cooldowns,
+        clip_times = game.clip_times
     )
 
 
@@ -394,7 +395,7 @@ def stage_next_round(game_id, past_games, entry):
         if chosen is None:
             entry['round'] = LIBRARY_EXHAUSTED
         elif chosen[1]:
-            prepare_audio_for_round(
+            _ = prepare_audio_for_round(
                 game_id, chosen[0], chosen[1], subdir=STAGING_SUBDIR)
             entry['round'] = chosen
     except Exception: #a failed cut just means go_to_next_round does it itself
@@ -457,7 +458,7 @@ def go_to_next_round(game):
         staged = get_random_game(game.previous_games)
         if staged is None:
             return None #player played all games
-        prepare_audio_for_round(game.id, staged[0], staged[1])
+        game.clip_times = prepare_audio_for_round(game.id, staged[0], staged[1])
     else:
         promote_staged_clips(game.id, len(staged[1]))
 
@@ -491,7 +492,7 @@ def start_game(is_infinite=False):
 
     cleanup_temp_files()
     id = str(uuid.uuid4())
-    prepare_audio_for_round(id, random_game[0], random_game[1])
+    clip_times = prepare_audio_for_round(id, random_game[0], random_game[1])
     new_game = Game(
         id=id,
         round_number=1,
@@ -509,7 +510,8 @@ def start_game(is_infinite=False):
         game_ended=False,
         last_interaction_date=int(datetime.datetime.now().timestamp()),
         correct_franchise=None,
-        ability_cooldowns={}
+        ability_cooldowns={},
+        clip_times=clip_times
     )
     active_games.append(new_game)
     start_staging(new_game)
@@ -518,6 +520,7 @@ def start_game(is_infinite=False):
 
 
 def prepare_audio_for_round(game_id, game_name, song_order, subdir=''): #puts three 20-second song clips into temp/game_id/0.mp3, temp/game_id/1.mp3, temp/game_id/2.mp3
+    clip_times = []
     src_folder = os.path.join(ASSETS_DIR, game_name)
     dest_folder = os.path.join(TEMP_DIR, game_id, subdir)
     os.makedirs(dest_folder, exist_ok=True)
@@ -527,10 +530,10 @@ def prepare_audio_for_round(game_id, game_name, song_order, subdir=''): #puts th
         audio = pydub.AudioSegment.from_file(src_path)
         max_start = len(audio) - CLIP_LENGTH_MS
         start = randint(0, max_start) if max_start > 0 else 0 #songs shorter than the clip start at 0
-
+        clip_times.append(start)
         clip = audio[start:start + CLIP_LENGTH_MS]
         clip.export(dest_path, format="mp3")
-
+    return clip_times
 
 def cleanup_temp_files():
     #drop the oldest finished games so temp/ does not grow without bound

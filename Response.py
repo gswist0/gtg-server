@@ -20,3 +20,4 @@ class Response:
     correct_answer: str = None #only revealed once the round is over
     correct_franchise: bool = None 
     ability_cooldowns: dict = None #ability name -> cooldown turns left
+    clip_times: list = None #list of start times for each song clip in the current round

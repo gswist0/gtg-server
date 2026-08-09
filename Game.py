@@ -20,6 +20,7 @@ class Game:
     #round specific - should reset after each round
     current_song: int
     song_order: list
+    clip_times: list
     round_completed: bool
     correct_franchise: bool
 
