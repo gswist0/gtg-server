@@ -55,6 +55,7 @@ active_games = []
 #cutting a round costs seconds of ffmpeg, so it runs while the player is still
 #guessing the current one. game_id -> {'done': Event, 'round': (name, songs) | None}
 staged_rounds = {}
+next_clip_times = []
 staging_lock = threading.Lock()
 
 LIBRARY_EXHAUSTED = object() #staging looked and there is no unplayed game left
@@ -395,7 +396,7 @@ def stage_next_round(game_id, past_games, entry):
         if chosen is None:
             entry['round'] = LIBRARY_EXHAUSTED
         elif chosen[1]:
-            _ = prepare_audio_for_round(
+            next_clip_times = prepare_audio_for_round(
                 game_id, chosen[0], chosen[1], subdir=STAGING_SUBDIR)
             entry['round'] = chosen
     except Exception: #a failed cut just means go_to_next_round does it itself
@@ -460,6 +461,7 @@ def go_to_next_round(game):
             return None #player played all games
         game.clip_times = prepare_audio_for_round(game.id, staged[0], staged[1])
     else:
+        game.clip_times = next_clip_times
         promote_staged_clips(game.id, len(staged[1]))
 
     game.current_song = 0
