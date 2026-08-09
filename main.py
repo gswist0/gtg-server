@@ -396,7 +396,7 @@ def stage_next_round(game_id, past_games, entry):
         if chosen is None:
             entry['round'] = LIBRARY_EXHAUSTED
         elif chosen[1]:
-            next_clip_times = prepare_audio_for_round(
+            entry['clip_times'] = prepare_audio_for_round(
                 game_id, chosen[0], chosen[1], subdir=STAGING_SUBDIR)
             entry['round'] = chosen
     except Exception: #a failed cut just means go_to_next_round does it itself
@@ -430,7 +430,7 @@ def take_staged_round(game):
         return None
     #worst case this waits exactly as long as cutting inline would have
     entry['done'].wait()
-    return entry['round']
+    return entry['clip_times'], entry['round']
 
 
 def promote_staged_clips(game_id, song_count):
@@ -452,7 +452,7 @@ def go_to_next_round(game):
     game.shield_left = 0
     game.all_unlocked = False
 
-    staged = take_staged_round(game)
+    clip_times, staged = take_staged_round(game)
     if staged is LIBRARY_EXHAUSTED:
         return None #player played all games
     if staged is None: #nothing usable was prepared, fall back to cutting inline
@@ -461,7 +461,7 @@ def go_to_next_round(game):
             return None #player played all games
         game.clip_times = prepare_audio_for_round(game.id, staged[0], staged[1])
     else:
-        game.clip_times = next_clip_times
+        game.clip_times = clip_times
         promote_staged_clips(game.id, len(staged[1]))
 
     game.current_song = 0
