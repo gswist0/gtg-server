@@ -567,4 +567,4 @@ if __name__ == '__main__':
     if not list_available_games():
         print(f"WARNING: no games found in {ASSETS_DIR} - /play will return 503 until you add some.")
     load_active_games()
-    app.run('0.0.0.0', port=9999, debug=True)
+    app.run('0.0.0.0', port=2137, debug=True)
