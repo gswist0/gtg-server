@@ -19,3 +19,4 @@ class Response:
     game_ended: bool = None
     correct_answer: str = None #only revealed once the round is over
     correct_franchise: bool = None 
+    ability_cooldowns: dict = None #ability name -> cooldown turns left

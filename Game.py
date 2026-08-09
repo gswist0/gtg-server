@@ -11,6 +11,7 @@ class Game:
     points: int #correct guesses so far
     current_game: str
     game_ended: bool
+    ability_cooldowns: dict
 
     #bonus points - should reset after round end or correct guess
     shield_left: int

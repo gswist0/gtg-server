@@ -1,0 +1,26 @@
+{
+ "shield": {
+    "cost": 1,
+    "cooldown": 2,
+    "description" : "Grants a shield that prevents damage taken for three guesses and restores 1 hp if guessed correctly while shield is active. You better not fail now.",
+    "pretty_name": "Shield"
+ },
+ "unlock": {
+    "cost": 1,
+    "cooldown": 2,
+    "description" : "Unlocks all songs for the current game with their full duration. Need an easy mode?",
+    "pretty_name": "Unlock"
+ },
+ "skip_round": {
+    "cost": 2,
+    "cooldown": 3,
+    "description" : "Skips the current round and moves to the next one. Embarrasing.",
+    "pretty_name": "Skip Round"
+ },
+ "extra_life": {
+    "cost": 1,
+    "cooldown": 0,
+    "description" : "Trades a bonus point for an extra life. Good luck.",
+    "pretty_name": "Extra Life"
+ }
+}

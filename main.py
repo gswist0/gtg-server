@@ -43,10 +43,7 @@ SHIELD_CHARGES = 3
 MAX_ACTIVE_GAMES = 50
 AUDIO_CACHE_SECONDS = 3600
 STAGING_SUBDIR = 'next' #temp/<game_id>/next/, where the round after this one is cut
-EXTRA_LIFE_COST = 1
-SHIELD_COST = 1
-SKIP_COST = 2
-UNLOCK_COST = 1
+
 
 app = flask.Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', uuid.uuid4().hex)
@@ -62,6 +59,7 @@ staging_lock = threading.Lock()
 
 LIBRARY_EXHAUSTED = object() #staging looked and there is no unplayed game left
 
+abilities_dict = json.loads(open("abilities.json").read())
 
 class NoGamesAvailable(Exception):
     pass
@@ -117,7 +115,8 @@ def build_response(game, response_text="", is_correct=None):
         is_infinite=game.is_infinite,
         game_ended=game.game_ended,
         correct_answer=game.current_game if reveal_answer else None,
-        correct_franchise=game.correct_franchise
+        correct_franchise=game.correct_franchise,
+        ability_cooldowns=game.ability_cooldowns
     )
 
 
@@ -143,6 +142,9 @@ class NoHealthcheckFilter(logging.Filter):
 
 logging.getLogger('werkzeug').addFilter(NoHealthcheckFilter())
 
+@app.route('/abilities_data', methods=['GET'])
+def abilities_data():
+    return flask.jsonify(abilities_dict), 200
 
 @app.route('/healthcheck', methods=['GET'])
 def healthcheck():
@@ -159,6 +161,33 @@ def game_state(game_id):
     if game is None:
         return json_error('Game not found', 404)
     return json_state(game)
+
+@app.route('/get_full_audio/<game_id>/<song_number>', methods=['GET'])
+def get_full_audio(game_id, song_number):
+    logging.info(f"Game {game_id} requested full audio for song {song_number}")
+    game = find_game(game_id)
+    if game is None:
+        return json_error('Game not found', 404)
+
+    try:
+        song_index = int(song_number)
+    except ValueError:
+        return json_error('Invalid song number', 400)
+
+    if song_index < 0 or song_index >= len(game.song_order):
+        return json_error('Invalid song number', 400)
+
+    unlocked = game.all_unlocked or game.round_completed or song_index <= game.current_song
+    if not unlocked:
+        return json_error('Song not unlocked', 403)
+
+    song_path = os.path.join(ASSETS_DIR, game.current_game, game.song_order[song_index])
+    if not os.path.exists(song_path):
+        return json_error('Audio file not found', 404)
+
+    response = flask.send_file(song_path, mimetype='audio/mpeg')
+    response.headers['Cache-Control'] = f'private, max-age={AUDIO_CACHE_SECONDS}, immutable'
+    return response
 
 
 @app.route('/get_audio/<game_id>/<song_number>', methods=['GET'])
@@ -238,6 +267,9 @@ def handle_guess(game, request):
     if guess.lower() == game.current_game.lower():
         if game.current_song == 0 and not game.is_infinite:
             game.bonus_points += 1
+        if not game.is_infinite and game.shield_left > 0 and game.lives < MAX_LIVES:
+            game.lives += 1
+
         game.points += 1
         game.round_completed = True
         save_active_games()
@@ -286,42 +318,41 @@ def handle_ability(game, request):
     
 
     ability = request.ability_used
+    ability_data = abilities_dict.get(ability)
+    if not ability_data:
+        return json_error('Invalid ability', 400)
+    if game.bonus_points < ability_data['cost']:
+        return json_error('Not enough bonus points', 400)
+    if game.ability_cooldowns.get(ability, 0) > 0:
+        return json_error(f"{ability_data['pretty_name']} is on cooldown", 400)
     if ability == 'shield':
-        if game.bonus_points < SHIELD_COST:
-                return json_error('Not enough bonus points', 400)
         if game.shield_left > 0:
             return json_error('Shield is already active', 400)
         game.shield_left = SHIELD_CHARGES
-        game.bonus_points -= SHIELD_COST
+        game.bonus_points -= ability_data['cost']
         response_text = "Shield activated"
     elif ability == 'unlock':
-        if game.bonus_points < UNLOCK_COST:
-                return json_error('Not enough bonus points', 400)
         if game.all_unlocked:
             return json_error('Songs are already unlocked', 400)
         game.all_unlocked = True
         game.current_song = len(game.song_order) - 1
-        game.bonus_points -= UNLOCK_COST
+        game.bonus_points -= ability_data['cost']
         response_text = "All songs unlocked"
     elif ability == 'skip_round':
-        if game.bonus_points < SKIP_COST:
-                return json_error('Not enough bonus points', 400)
         game.round_completed = True
         game.current_song = len(game.song_order) - 1
-        game.bonus_points -= SKIP_COST
+        game.bonus_points -= ability_data['cost']
         response_text = f"Round skipped, the game was {game.current_game}"
     elif ability == 'extra_life':
-        if game.bonus_points < EXTRA_LIFE_COST:
-                return json_error('Not enough bonus points', 400)
         if game.lives >= MAX_LIVES:
             return json_error('Lives are already full', 400)
         game.lives += 1
-        game.bonus_points -= EXTRA_LIFE_COST
+        game.bonus_points -= ability_data['cost']
         response_text = "Extra life granted"
     else:
         return json_error('Invalid ability', 400)
 
-    
+    game.ability_cooldowns[ability] = ability_data['cooldown']
     save_active_games()  # Save the game state after using an ability
     return json_state(game, response_text)
 
@@ -412,6 +443,9 @@ def promote_staged_clips(game_id, song_count):
 
 def go_to_next_round(game):
     game.round_number += 1
+    for ability in game.ability_cooldowns:
+        if game.ability_cooldowns[ability] > 0:
+            game.ability_cooldowns[ability] -= 1
     game.previous_games.append(game.current_game)
     game.shield_left = 0
     game.all_unlocked = False
@@ -474,7 +508,8 @@ def start_game(is_infinite=False):
         round_completed=False,
         game_ended=False,
         last_interaction_date=int(datetime.datetime.now().timestamp()),
-        correct_franchise=None
+        correct_franchise=None,
+        ability_cooldowns={}
     )
     active_games.append(new_game)
     start_staging(new_game)
@@ -532,4 +567,4 @@ if __name__ == '__main__':
     if not list_available_games():
         print(f"WARNING: no games found in {ASSETS_DIR} - /play will return 503 until you add some.")
     load_active_games()
-    app.run('0.0.0.0', port=2137, debug=True)
+    app.run('0.0.0.0', port=9999, debug=True)
