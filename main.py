@@ -144,6 +144,13 @@ class NoHealthcheckFilter(logging.Filter):
 
 logging.getLogger('werkzeug').addFilter(NoHealthcheckFilter())
 
+@app.route('/game_history/<game_id>', methods=['GET'])
+def game_history(game_id):
+    game = find_game(game_id)
+    if game is None:
+        return json_error('Game not found', 404)
+    return flask.jsonify(game.previous_rounds)
+
 @app.route('/abilities_data', methods=['GET'])
 def abilities_data():
     return flask.jsonify(abilities_dict), 200
@@ -274,6 +281,9 @@ def handle_guess(game, request):
 
         game.points += 1
         game.round_completed = True
+        logging.info(type(game.round))
+        game.round["guessed_correctly"] = True
+        game.round["guessed_on"] = game.current_song
         save_active_games()
         return json_state(game, f"Correct, the game was {game.current_game}", is_correct=True)
 
@@ -327,6 +337,9 @@ def handle_ability(game, request):
         return json_error('Not enough bonus points', 400)
     if game.ability_cooldowns.get(ability, 0) > 0:
         return json_error(f"{ability_data['pretty_name']} is on cooldown", 400)
+    up = game.round["used_powerups"]
+    up.append(ability)
+    game.round["used_powerups"] = up
     if ability == 'shield':
         if game.shield_left > 0:
             return json_error('Shield is already active', 400)
@@ -445,6 +458,8 @@ def promote_staged_clips(game_id, song_count):
 
 def go_to_next_round(game):
     game.round_number += 1
+    game.previous_rounds.append(game.round)
+    
     for ability in game.ability_cooldowns:
         if game.ability_cooldowns[ability] > 0:
             game.ability_cooldowns[ability] -= 1
@@ -466,6 +481,8 @@ def go_to_next_round(game):
 
     game.current_song = 0
     game.current_game = staged[0]
+    game.round = {"round_number":game.round_number,"guessed_correctly":False,"guessed_on":-1,"game":staged[0],"used_powerups":[]}
+    logging.info(type(game.round))
     game.song_order = staged[1]
     game.round_completed = False
     logging.info(f"Game {game.id} advanced to round {game.round_number}, next game is {game.current_game}")
@@ -513,8 +530,11 @@ def start_game(is_infinite=False):
         last_interaction_date=int(datetime.datetime.now().timestamp()),
         correct_franchise=None,
         ability_cooldowns={},
-        clip_times=clip_times
+        clip_times=clip_times,
+        round = {"round_number":1,"guessed_correctly":False,"guessed_on":-1,"game":random_game[0],"used_powerups":[]},
+        previous_rounds=[] 
     )
+    logging.info(type(new_game.round))
     active_games.append(new_game)
     start_staging(new_game)
     logging.info(f"Started new game {new_game.id}, infinite = {new_game.is_infinite}, first game is {new_game.current_game}")

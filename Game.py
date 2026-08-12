@@ -12,6 +12,7 @@ class Game:
     current_game: str
     game_ended: bool
     ability_cooldowns: dict
+    previous_rounds: list
 
     #bonus points - should reset after round end or correct guess
     shield_left: int
@@ -23,6 +24,9 @@ class Game:
     clip_times: list
     round_completed: bool
     correct_franchise: bool
+    round: dict
+    
 
     #for cleanup purposes
     last_interaction_date: int
+
