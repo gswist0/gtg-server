@@ -274,7 +274,9 @@ def handle_guess(game, request):
         return json_error('No guess provided', 400)
 
     if guess.lower() == game.current_game.lower():
-        if game.current_song == 0 and not game.is_infinite:
+        #unlock no longer moves current_song, so keep it from handing out the
+        #first song bonus that unlocking used to rule out
+        if game.current_song == 0 and not game.is_infinite and not game.all_unlocked:
             game.bonus_points += 1
         if not game.is_infinite and game.shield_left > 0 and game.lives < MAX_LIVES:
             game.lives += 1
@@ -349,8 +351,9 @@ def handle_ability(game, request):
     elif ability == 'unlock':
         if game.all_unlocked:
             return json_error('Songs are already unlocked', 400)
+        #current_song doubles as the attempt counter, so it must not move here.
+        #the audio routes already serve every song once all_unlocked is set.
         game.all_unlocked = True
-        game.current_song = len(game.song_order) - 1
         game.bonus_points -= ability_data['cost']
         response_text = "All songs unlocked"
     elif ability == 'skip_round':
