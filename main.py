@@ -97,6 +97,16 @@ def find_game(game_id):
     return next((g for g in active_games if g.id == game_id), None)
 
 
+def new_round_entry(round_number, game_name):
+    return {
+        "round_number": round_number,
+        "guessed_correctly": False,
+        "guessed_on": -1,
+        "game": game_name,
+        "used_powerups": [],
+    }
+
+
 def build_response(game, response_text="", is_correct=None):
     reveal_answer = game.round_completed or game.game_ended
     return Response(
@@ -149,7 +159,12 @@ def game_history(game_id):
     game = find_game(game_id)
     if game is None:
         return json_error('Game not found', 404)
-    return flask.jsonify(game.previous_rounds)
+    history = list(game.previous_rounds)
+    #the round in flight only moves into previous_rounds on 'next', which never
+    #comes for the round the game ended on
+    if game.round and (game.round_completed or game.game_ended):
+        history.append(game.round)
+    return flask.jsonify(history)
 
 @app.route('/abilities_data', methods=['GET'])
 def abilities_data():
@@ -283,7 +298,6 @@ def handle_guess(game, request):
 
         game.points += 1
         game.round_completed = True
-        logging.info(type(game.round))
         game.round["guessed_correctly"] = True
         game.round["guessed_on"] = game.current_song
         save_active_games()
@@ -339,9 +353,6 @@ def handle_ability(game, request):
         return json_error('Not enough bonus points', 400)
     if game.ability_cooldowns.get(ability, 0) > 0:
         return json_error(f"{ability_data['pretty_name']} is on cooldown", 400)
-    up = game.round["used_powerups"]
-    up.append(ability)
-    game.round["used_powerups"] = up
     if ability == 'shield':
         if game.shield_left > 0:
             return json_error('Shield is already active', 400)
@@ -370,6 +381,8 @@ def handle_ability(game, request):
     else:
         return json_error('Invalid ability', 400)
 
+    #logged here, so the abilities rejected above never make it into the round
+    game.round["used_powerups"].append(ability)
     game.ability_cooldowns[ability] = ability_data['cooldown']
     save_active_games()  # Save the game state after using an ability
     return json_state(game, response_text)
@@ -484,8 +497,7 @@ def go_to_next_round(game):
 
     game.current_song = 0
     game.current_game = staged[0]
-    game.round = {"round_number":game.round_number,"guessed_correctly":False,"guessed_on":-1,"game":staged[0],"used_powerups":[]}
-    logging.info(type(game.round))
+    game.round = new_round_entry(game.round_number, staged[0])
     game.song_order = staged[1]
     game.round_completed = False
     logging.info(f"Game {game.id} advanced to round {game.round_number}, next game is {game.current_game}")
@@ -534,10 +546,9 @@ def start_game(is_infinite=False):
         correct_franchise=None,
         ability_cooldowns={},
         clip_times=clip_times,
-        round = {"round_number":1,"guessed_correctly":False,"guessed_on":-1,"game":random_game[0],"used_powerups":[]},
-        previous_rounds=[] 
+        round=new_round_entry(1, random_game[0]),
+        previous_rounds=[]
     )
-    logging.info(type(new_game.round))
     active_games.append(new_game)
     start_staging(new_game)
     logging.info(f"Started new game {new_game.id}, infinite = {new_game.is_infinite}, first game is {new_game.current_game}")
