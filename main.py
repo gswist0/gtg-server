@@ -456,10 +456,14 @@ def take_staged_round(game):
     with staging_lock:
         entry = staged_rounds.pop(game.id, None)
     if entry is None:
-        return None
+        return None,None
     #worst case this waits exactly as long as cutting inline would have
     entry['done'].wait()
-    return entry['clip_times'], entry['round']
+    try:
+        return entry['clip_times'], entry['round']
+    except KeyError:
+        return None, None #game ends
+
 
 
 def promote_staged_clips(game_id, song_count):
